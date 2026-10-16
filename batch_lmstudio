@@ -1,0 +1,122 @@
+import asyncio
+import time
+from pathlib import Path
+
+import pandas as pd
+from openai import AsyncOpenAI
+
+# --------------------------------------------------
+# CONFIG
+# --------------------------------------------------
+
+BASE_URL = "http://localhost:1234/v1"
+API_KEY = "lm-studio"
+MAX_CONCURRENT = 1  # Keep at 1 for local servers unless continuous batching is configured
+MAX_TOKENS = 2048   # High enough so internal reasoning doesn't cut off the final answer
+TEMPERATURE = 0.2
+
+OUTPUT_DIR = Path("results")
+OUTPUT_DIR.mkdir(exist_ok=True)
+
+client = AsyncOpenAI(
+    base_url=BASE_URL,
+    api_key=API_KEY,
+    timeout=300.0,
+    max_retries=2,
+)
+
+SYSTEM_PROMPT = "Your answer should end with #### Integer"
+
+# --------------------------------------------------
+# YOUR BATCH OF PROMPTS
+# --------------------------------------------------
+
+PROMPTS = [
+    "Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?",
+    "Carla is downloading a 200 GB file. Normally she can download 2 GB/minute, but 40% of the way through the download, Windows forces a restart to install updates, which takes 20 minutes. Then Carla has to restart the download from the beginning. How long does it take to download the file?",
+]
+
+MODELS = ["qwen/qwen3.8-27b"]
+
+
+async def query_model(model: str, prompt: str, semaphore: asyncio.Semaphore) -> dict:
+    """Send one prompt to one model and capture its result."""
+    async with semaphore:
+        start = time.perf_counter()
+        record = {
+            "model": model,
+            "prompt": prompt,
+            "response": "",
+            "reasoning": "",
+            "finish_reason": None,
+            "latency_seconds": None,
+            "error": None,
+        }
+
+        try:
+            response = await client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=TEMPERATURE,
+                max_tokens=MAX_TOKENS,
+            )
+
+            choice = response.choices[0]
+            msg = choice.message
+
+            # Capture standard content and any separated thinking/reasoning tokens
+            content = (msg.content or "").strip()
+            reasoning = (getattr(msg, "reasoning_content", None) or "").strip()
+
+            # Fallback to reasoning if the model put everything inside the thinking block
+            record["response"] = content if content else reasoning
+            record["reasoning"] = reasoning
+            record["finish_reason"] = choice.finish_reason
+
+        except Exception as exc:
+            record["error"] = f"{type(exc).__name__}: {exc}"
+
+        finally:
+            record["latency_seconds"] = round(time.perf_counter() - start, 3)
+
+        print(
+            f"[{record['latency_seconds']}s] {model} | "
+            f"Finish: {record['finish_reason']} | {prompt[:40]!r}"
+        )
+        return record
+
+
+async def main():
+    print(f"Models: {MODELS}")
+    print(f"Prompts: {len(PROMPTS)}\n")
+
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT)
+
+    tasks = [
+        query_model(model, prompt, semaphore)
+        for prompt in PROMPTS
+        for model in MODELS
+    ]
+
+    results = await asyncio.gather(*tasks)
+
+    df = pd.DataFrame(results)
+
+    csv_path = OUTPUT_DIR / "batch_results.csv"
+    json_path = OUTPUT_DIR / "batch_results.json"
+
+    df.to_csv(csv_path, index=False)
+    df.to_json(json_path, orient="records", indent=2, force_ascii=False)
+
+    print(f"\nCompleted: {len(results)} requests")
+    print(f"Successful: {df['error'].isna().sum()}")
+    print(f"Failed: {df['error'].notna().sum()}")
+    print(f"CSV: {csv_path.resolve()}")
+    print(f"JSON: {json_path.resolve()}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
