@@ -4,3 +4,5 @@ promptfoo eval --resume eval-6da-2026-10-21T08:14:48 gemma
 promptfoo eval --resume eval-Q4J-2026-10-21T10:30:36 gemma
 
 promptfoo eval --resume eval-Q4J-2026-10-21T10:30:36
+
+promptfoo eval --resume eval-3oX-2026-10-22T08:06:45 qwen3.8
