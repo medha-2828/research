@@ -1,0 +1,6 @@
+» Resume with: promptfoo eval --resume eval-f6T-2026-10-21T07:13:56   gsm8 dataset
+promptfoo eval --resume eval-6da-2026-10-21T08:14:48 gemma
+
+promptfoo eval --resume eval-Q4J-2026-10-21T10:30:36 gemma
+
+promptfoo eval --resume eval-Q4J-2026-10-21T10:30:36
