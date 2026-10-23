@@ -1,0 +1,24 @@
+
+description: GSM8K non-thinking batch evaluation qwen3.8:27b
+
+prompts:
+  - |
+    Solve this math problem. Be concise and accurate.
+    Return the final numerical answer in the format #### answer.
+
+    Question: {{question}}
+
+providers:
+  - id: ollama:chat:qwen3.8:27b
+    config:
+      temperature: 0.1
+      think: false
+
+tests: file://gsm8k_train2.csv
+
+evaluationOptions:
+  maxConcurrency: 4
+  repeat: 1
+  cache: true
+  timeoutMs: 120000
+  showProgressBar: true
